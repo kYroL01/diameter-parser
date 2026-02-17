@@ -1,4 +1,4 @@
-# diameter-parser
+# Diameter-parser
 
 Diameter protocol parsing tool
 
@@ -22,4 +22,4 @@ Provide a PCAP file with Diameter traffic and point the binary at it:
 ./diameter-parser -pcap path/to/capture.pcap
 ```
 
-Each Diameter message found in the capture is emitted as a JSON object on stdout. You can also run without building a standalone binary by using `go run . -pcap <file>`.
+NOTE: Each Diameter message found in the capture is emitted as a JSON object on stdout.
