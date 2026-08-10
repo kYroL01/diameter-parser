@@ -62,74 +62,92 @@ func main() {
 
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	for packet := range packetSource.Packets() {
-		appLayer := packet.ApplicationLayer()
-		if appLayer == nil {
-			continue
+		processPacket(packet, d)
+	}
+}
+
+// maxDiameterMessageLen mirrors the RFC 6733 24-bit Message Length field:
+// no valid Diameter message can exceed this, so bigger payloads aren't worth
+// handing to the parser.
+const maxDiameterMessageLen = 1 << 24
+
+// processPacket parses and prints a single packet's Diameter payload. It
+// recovers from panics so one malformed/malicious packet can't take down
+// the whole run.
+func processPacket(packet gopacket.Packet, d *dict.Parser) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("recovered from panic parsing packet:", r)
 		}
-		payload := appLayer.Payload()
-		if len(payload) == 0 {
-			continue
-		}
+	}()
 
-		// Use dictionary when reading the message.
-		msg, err := diam.ReadMessage(bytes.NewReader(payload), d)
-		if err != nil {
-			// Not a Diameter message, or incomplete.
-			continue
-		}
+	appLayer := packet.ApplicationLayer()
+	if appLayer == nil {
+		return
+	}
+	payload := appLayer.Payload()
+	if len(payload) == 0 || len(payload) > maxDiameterMessageLen {
+		return
+	}
 
-		// Extract message info.
-		mi := MessageInfo{
-			CommandCode:      msg.Header.CommandCode,
-			CommandCodeName:  commandCodeName(msg.Header.CommandCode),
-			CommandFlags:     msg.Header.CommandFlags,
-			CommandFlagsName: commandFlagsName(msg.Header.CommandFlags),
-			ApplicationID:    msg.Header.ApplicationID,
-			ApplicationName:  applicationName(msg.Header.ApplicationID),
-			HopByHopID:       msg.Header.HopByHopID,
-			EndToEndID:       msg.Header.EndToEndID,
-		}
+	// Use dictionary when reading the message.
+	msg, err := diam.ReadMessage(bytes.NewReader(payload), d)
+	if err != nil {
+		// Not a Diameter message, or incomplete.
+		return
+	}
 
-		for _, a := range msg.AVP {
+	// Extract message info.
+	mi := MessageInfo{
+		CommandCode:      msg.Header.CommandCode,
+		CommandCodeName:  commandCodeName(msg.Header.CommandCode),
+		CommandFlags:     msg.Header.CommandFlags,
+		CommandFlagsName: commandFlagsName(msg.Header.CommandFlags),
+		ApplicationID:    msg.Header.ApplicationID,
+		ApplicationName:  applicationName(msg.Header.ApplicationID),
+		HopByHopID:       msg.Header.HopByHopID,
+		EndToEndID:       msg.Header.EndToEndID,
+	}
 
-			// Lookup AVP name from dictionary.
-			name := avpNameFromDict(d, msg.Header.ApplicationID, a.Code, a.VendorID)
-			// Convert AVP data to JSON-friendly value.
-			var data interface{} = avpToJSONValue(a.Data)
+	for _, a := range msg.AVP {
 
-			// If this is a grouped AVP, decode its children.
-			if g, ok := a.Data.(datatype.Grouped); ok {
-				ga, err := diam.DecodeGrouped(g, msg.Header.ApplicationID, d)
-				if err == nil && ga != nil {
-					data = GroupedData{
-						AVPs: avpsToInfoList(d, msg.Header.ApplicationID, ga.AVP),
-					}
-				}
-			} else if name == "Visited-PLMN-Id" {
-				// Existing special case for PLMN.
-				if os, ok := a.Data.(datatype.OctetString); ok {
-					if plmn := decodePLMN([]byte(os)); plmn != nil {
-						data = plmn
-					}
+		// Lookup AVP name from dictionary.
+		name := avpNameFromDict(d, msg.Header.ApplicationID, a.Code, a.VendorID)
+		// Convert AVP data to JSON-friendly value.
+		var data interface{} = avpToJSONValue(a.Data)
+
+		// If this is a grouped AVP, decode its children.
+		if g, ok := a.Data.(datatype.Grouped); ok {
+			ga, err := diam.DecodeGrouped(g, msg.Header.ApplicationID, d)
+			if err == nil && ga != nil {
+				data = GroupedData{
+					AVPs: avpsToInfoList(d, msg.Header.ApplicationID, ga.AVP),
 				}
 			}
-
-			mi.AVPs = append(mi.AVPs, AVPInfo{
-				Code:     a.Code,
-				VendorID: a.VendorID,
-				Name:     name,
-				Data:     data,
-			})
+		} else if name == "Visited-PLMN-Id" {
+			// Existing special case for PLMN.
+			if os, ok := a.Data.(datatype.OctetString); ok {
+				if plmn := decodePLMN([]byte(os)); plmn != nil {
+					data = plmn
+				}
+			}
 		}
 
-		// Output as JSON.
-		out, err := json.MarshalIndent(mi, "", "  ")
-		if err != nil {
-			log.Println("json marshal error:", err)
-			continue
-		}
-		fmt.Println(string(out))
+		mi.AVPs = append(mi.AVPs, AVPInfo{
+			Code:     a.Code,
+			VendorID: a.VendorID,
+			Name:     name,
+			Data:     data,
+		})
 	}
+
+	// Output as JSON.
+	out, err := json.MarshalIndent(mi, "", "  ")
+	if err != nil {
+		log.Println("json marshal error:", err)
+		return
+	}
+	fmt.Println(string(out))
 }
 
 // Lookup AVP name in the loaded dictionary.
