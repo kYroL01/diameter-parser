@@ -1,6 +1,6 @@
 # Diameter-parser
 
-<img width="333" height="325" alt="diam-p" src="https://github.com/user-attachments/assets/8237939c-50a8-4587-9cfe-40c96dda0baa" />
+<img width="333" height="325" alt="diam-p" src="logo.png" />
 
 
 Diameter protocol parsing tool
