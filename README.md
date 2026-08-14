@@ -9,7 +9,7 @@ Diameter protocol parsing tool
 
 Prerequisites:
 - Go 1.24+
-- libpcap headers (e.g., `sudo apt-get install -y libpcap-dev` on Debian/Ubuntu, or `sudo yum install -y libpcap`)
+- libpcap headers (e.g., `sudo apt-get install -y libpcap-dev` on Debian/Ubuntu, or `sudo yum install -y libpcap` on RHEL)
 
 Build the binary:
 
