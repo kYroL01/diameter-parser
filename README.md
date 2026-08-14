@@ -14,7 +14,7 @@ Prerequisites:
 Build the binary:
 
 ```bash
-go build -o diameter-parser .
+go build -o diameter-parser
 ```
 
 ## Run
